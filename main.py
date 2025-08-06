@@ -61,6 +61,48 @@ async def xemlich(ctx):
         embed.add_field(name=f"<@{uid}>", value=", ".join(ranges), inline=False)
     await ctx.send(embed=embed)
 
+# ✅ Lệnh !tatauto - Tắt quyền xem của AutoJoiner
+@bot.command()
+async def tatauto(ctx):
+    guild = ctx.guild
+    member = guild.get_member(1386358388497059882)
+    channel = guild.get_channel(target_channel_id)
+    log_channel = guild.get_channel(log_channel_id)
+
+    if not member or not channel:
+        await ctx.send("⚠️ Không tìm thấy thành viên hoặc channel.")
+        return
+
+    overwrite = discord.PermissionOverwrite()
+    overwrite.view_channel = False
+    await channel.set_permissions(member, overwrite=overwrite)
+
+    if log_channel:
+        await log_channel.send("❌ AutoJoiner đã tắt")
+
+    await ctx.send("✅ Đã tắt quyền xem channel cho AutoJoiner.")
+
+# ✅ Lệnh !batauto - Bật quyền xem của AutoJoiner
+@bot.command()
+async def batauto(ctx):
+    guild = ctx.guild
+    member = guild.get_member(1386358388497059882)
+    channel = guild.get_channel(target_channel_id)
+    log_channel = guild.get_channel(log_channel_id)
+
+    if not member or not channel:
+        await ctx.send("⚠️ Không tìm thấy thành viên hoặc channel.")
+        return
+
+    overwrite = discord.PermissionOverwrite()
+    overwrite.view_channel = True
+    await channel.set_permissions(member, overwrite=overwrite)
+
+    if log_channel:
+        await log_channel.send("✅ AutoJoiner đã được bật")
+
+    await ctx.send("✅ Đã bật quyền xem channel cho AutoJoiner.")
+
 @bot.event
 async def on_ready():
     print(f"✅ Bot đã online: {bot.user}")

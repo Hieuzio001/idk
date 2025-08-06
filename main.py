@@ -3,7 +3,7 @@ from discord.ext import commands, tasks
 from datetime import datetime, timedelta
 import os
 
-TOKEN = os.getenv("TOKEN")
+TOKEN = os.getenv("TOKEN")  # Token của bạn sẽ cấu hình trong Railway sau
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -12,9 +12,11 @@ intents.members = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-target_channel_id = 1395784873708486656
-log_channel_id = 1402130773418442863
+# Gán thông tin ID
+target_channel_id = 1395784873708486656  # Channel để bật/tắt view
+log_channel_id = 1402130773418442863     # Channel để gửi thông báo
 
+# Lịch truy cập của từng user
 user_schedules = {
     994084789697134592: [(4, 7), (15, 18)],
     1284898656415125586: [(11, 15), (21, 24)],
@@ -45,7 +47,6 @@ async def update_permissions():
             overwrite = discord.PermissionOverwrite()
             overwrite.view_channel = can_view
             await channel.set_permissions(member, overwrite=overwrite)
-
             if log_channel:
                 status = "✅ **ĐÃ MỞ**" if can_view else "⛔ **ĐÃ ẨN**"
                 await log_channel.send(
@@ -60,46 +61,9 @@ async def xemlich(ctx):
         embed.add_field(name=f"<@{uid}>", value=", ".join(ranges), inline=False)
     await ctx.send(embed=embed)
 
-@bot.command()
-async def tatauto(ctx):
-    guild = ctx.guild
-    member = guild.get_member(1386358388497059882)
-    channel = guild.get_channel(target_channel_id)
-    log_channel = guild.get_channel(log_channel_id)
-
-    if not member or not channel:
-        await ctx.send("⚠️ Không tìm thấy thành viên hoặc channel.")
-        return
-
-    overwrite = discord.PermissionOverwrite()
-    overwrite.view_channel = False
-    await channel.set_permissions(member, overwrite=overwrite)
-
-    if log_channel:
-        await log_channel.send("❌ AutoJoiner đã tắt")
-
-    await ctx.send("✅ Đã tắt quyền xem channel cho AutoJoiner.")
-
-@bot.command()
-async def batauto(ctx):
-    guild = ctx.guild
-    member = guild.get_member(1386358388497059882)
-    channel = guild.get_channel(target_channel_id)
-    log_channel = guild.get_channel(log_channel_id)
-
-    if not member or not channel:
-        await ctx.send("⚠️ Không tìm thấy thành viên hoặc channel.")
-        return
-
-    overwrite = discord.PermissionOverwrite()
-    overwrite.view_channel = True
-    await channel.set_permissions(member, overwrite=overwrite)
-
-    if log_channel:
-        await log_channel.send("✅ AutoJoiner đã được bật")
-
-    await ctx.send("✅ Đã bật quyền xem channel cho AutoJoiner.")
 @bot.event
 async def on_ready():
     print(f"✅ Bot đã online: {bot.user}")
     update_permissions.start()
+
+bot.run(TOKEN)

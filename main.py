@@ -99,7 +99,6 @@ async def batauto(ctx):
         await log_channel.send("✅ AutoJoiner đã được bật")
 
     await ctx.send("✅ Đã bật quyền xem channel cho AutoJoiner.")
-
 @bot.event
 async def on_ready():
     print(f"✅ Bot đã online: {bot.user}")

@@ -25,6 +25,7 @@ LINK_GROUPS = [
     (1288889343628541994, 994084789697134592),  # <@1288889343628541994> <-> <@994084789697134592>
 ]
 
+# ---------- Helpers: JSON schedules ----------
 def load_schedules():
     try:
         with open(SCHEDULE_FILE, "r", encoding="utf-8") as f:
@@ -50,7 +51,7 @@ def save_schedules():
 
 user_schedules = load_schedules()
 
-# === Helpers ===
+# ---------- Helpers: logic ----------
 def is_within_time_range(hour: int, ranges):
     return any(start <= hour < end for start, end in ranges)
 
@@ -85,10 +86,73 @@ def get_linked_users(user_id: int):
             return set(group)
     return {user_id}
 
-# === Cập nhật quyền mỗi phút (giờ VN) ===
+def format_ranges(ranges):
+    return ", ".join([f"{a}h-{b}h" for a, b in ranges])
+
+def vn_now():
+    return datetime.utcnow() + timedelta(hours=7)
+
+# ---------- Helpers: embeds ----------
+def embed_open(member_mention: str, channel_id: int, now_dt: datetime):
+    e = discord.Embed(
+        title="✅ Quyền Truy Cập ĐÃ MỞ",
+        description=f"{member_mention} đã được **mở quyền xem** kênh <#{channel_id}>.",
+        color=discord.Color.green()
+    )
+    e.set_footer(text=f"Thời gian: {now_dt.strftime('%H:%M')}")
+    return e
+
+def embed_close(member_mention: str, channel_id: int, now_dt: datetime):
+    e = discord.Embed(
+        title="⛔ Quyền Truy Cập ĐÃ ẨN",
+        description=f"{member_mention} đã bị **ẩn quyền xem** kênh <#{channel_id}>.",
+        color=discord.Color.red()
+    )
+    e.set_footer(text=f"Thời gian: {now_dt.strftime('%H:%M')}")
+    return e
+
+def embed_set_single(member_mention: str, ranges, applied_now: bool):
+    e = discord.Embed(
+        title="🛠 Cập Nhật Lịch Truy Cập",
+        description=f"Đã cập nhật lịch cho {member_mention}\n**Khoảng:** {format_ranges(ranges)}",
+        color=discord.Color.blurple()
+    )
+    if applied_now:
+        e.add_field(name="Áp dụng ngay", value="✅ Đã set quyền tương ứng với giờ hiện tại", inline=False)
+    return e
+
+def embed_set_group(members_mentions: str, ranges, applied_now: bool):
+    e = discord.Embed(
+        title="🛠 Cập Nhật Lịch (Đồng Bộ Nhóm)",
+        description=f"Đã cập nhật lịch cho: {members_mentions}\n**Khoảng:** {format_ranges(ranges)}",
+        color=discord.Color.gold()
+    )
+    if applied_now:
+        e.add_field(name="Áp dụng ngay", value="✅ Đã set quyền cho toàn bộ nhóm theo giờ hiện tại", inline=False)
+    return e
+
+def embed_auto_off(now_dt: datetime, channel_id: int):
+    e = discord.Embed(
+        title="❌ AutoJoiner đã tắt",
+        description=f"Đã **tắt quyền xem** cho AutoJoiner tại kênh <#{channel_id}>.",
+        color=discord.Color.red()
+    )
+    e.set_footer(text=f"Thời gian: {now_dt.strftime('%H:%M')}")
+    return e
+
+def embed_auto_on(now_dt: datetime, channel_id: int):
+    e = discord.Embed(
+        title="✅ AutoJoiner đã bật",
+        description=f"Đã **bật quyền xem** cho AutoJoiner tại kênh <#{channel_id}>.",
+        color=discord.Color.green()
+    )
+    e.set_footer(text=f"Thời gian: {now_dt.strftime('%H:%M')}")
+    return e
+
+# ---------- Vòng lặp cập nhật quyền mỗi phút ----------
 @tasks.loop(minutes=1)
 async def update_permissions():
-    now = datetime.utcnow() + timedelta(hours=7)
+    now = vn_now()
     hour = now.hour
     guild = discord.utils.get(bot.guilds)
     if not guild:
@@ -111,26 +175,24 @@ async def update_permissions():
             await channel.set_permissions(member, overwrite=overwrite)
 
             if log_channel:
-                status = "✅ **ĐÃ MỞ**" if can_view else "⛔ **ĐÃ ẨN**"
-                await log_channel.send(
-                    f"{status} quyền xem channel cho <@{user_id}> lúc `{now.strftime('%H:%M')}`"
-                )
+                if can_view:
+                    await log_channel.send(embed=embed_open(member.mention, target_channel_id, now))
+                else:
+                    await log_channel.send(embed=embed_close(member.mention, target_channel_id, now))
 
-# === Lệnh xem lịch tổng ===
+# ---------- Lệnh xem lịch tổng ----------
 @bot.command()
 async def xemlich(ctx):
-    embed = discord.Embed(
+    e = discord.Embed(
         title="📅 Lịch Truy Cập",
         color=discord.Color.blue(),
-        timestamp=datetime.utcnow() + timedelta(hours=7)
+        timestamp=vn_now()
     )
     for uid, schedule in user_schedules.items():
-        ranges = [f"{start}h - {end}h" for start, end in schedule]
-        user_name = f"<@{uid}>"
-        embed.add_field(name=user_name, value=", ".join(ranges), inline=False)
-    await ctx.send(embed=embed)
+        e.add_field(name=f"<@{uid}>", value=format_ranges(schedule), inline=False)
+    await ctx.send(embed=e)
 
-# === Lệnh xem lịch 1 người: !lich @user / !lich 123456789 ===
+# ---------- Lệnh xem lịch 1 người ----------
 @bot.command()
 async def lich(ctx, user: discord.Member = None):
     if user is None:
@@ -141,10 +203,9 @@ async def lich(ctx, user: discord.Member = None):
     if not schedule:
         await ctx.send(f"ℹ️ {user.mention} **chưa có lịch**.")
         return
-    ranges = ", ".join([f"{a}h-{b}h" for a, b in schedule])
-    await ctx.send(f"📅 Lịch của {user.mention}: {ranges}")
+    await ctx.send(embed=embed_set_single(user.mention, schedule, applied_now=False))
 
-# === Lệnh SET lịch: chỉ admin; tự ĐỒNG BỘ nhóm liên kết ===
+# ---------- Lệnh SET lịch (admin) – chỉ log 'đồng bộ nhóm' khi thực sự có nhóm ----------
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def setlich(ctx, user: discord.Member = None, *, ranges_text: str = None):
@@ -163,22 +224,21 @@ async def setlich(ctx, user: discord.Member = None, *, ranges_text: str = None):
         await ctx.send(f"❌ {e}")
         return
 
-    # Tìm nhóm liên kết (nếu có)
+    # Tìm nhóm liên kết
     linked_users = get_linked_users(user.id)
 
-    # Cập nhật lịch cho toàn bộ nhóm
+    # Cập nhật lịch
     for uid in linked_users:
         user_schedules[uid] = ranges
-
     save_schedules()
 
-    # Áp dụng ngay: set permission theo giờ hiện tại cho cả nhóm
+    # Áp dụng ngay
     guild = ctx.guild
     channel = guild.get_channel(target_channel_id)
     log_channel = guild.get_channel(log_channel_id)
-    now = datetime.utcnow() + timedelta(hours=7)
+    now = vn_now()
     hour = now.hour
-    status_texts = []
+    applied_now = False
 
     if channel:
         for uid in linked_users:
@@ -189,33 +249,31 @@ async def setlich(ctx, user: discord.Member = None, *, ranges_text: str = None):
             overwrite = discord.PermissionOverwrite()
             overwrite.view_channel = can_view
             await channel.set_permissions(member, overwrite=overwrite)
-            status = "✅ **ĐÃ MỞ**" if can_view else "⛔ **ĐÃ ẨN**"
-            status_texts.append(f"{status} <@{uid}>")
+            applied_now = True
 
-        # Gửi log tóm tắt
-        if log_channel and status_texts:
-            await log_channel.send(
-                "🛠 **Đã cập nhật lịch (đồng bộ nhóm)**: "
-                + ", ".join([f"<@{uid}>" for uid in linked_users]) + "\n"
-                + "Khoảng: " + ", ".join([f"{a}h-{b}h" for a, b in ranges]) + "\n"
-                + f"Áp dụng ngay lúc `{now.strftime('%H:%M')}` → "
-                + "; ".join(status_texts)
-            )
+    # Thông báo:
+    if len(linked_users) > 1:
+        # Có đồng bộ nhóm
+        mentions_str = ", ".join([f"<@{uid}>" for uid in linked_users])
+        emb = embed_set_group(mentions_str, ranges, applied_now)
+        if log_channel:
+            await log_channel.send(embed=emb)
+        await ctx.send(embed=emb)
+    else:
+        # Không có đồng bộ, thông báo đơn lẻ
+        emb = embed_set_single(user.mention, ranges, applied_now)
+        if log_channel:
+            await log_channel.send(embed=emb)
+        await ctx.send(embed=emb)
 
-    # Phản hồi tại kênh gọi lệnh
-    await ctx.send(
-        "✅ Đã đặt lịch (đồng bộ nhóm) cho: "
-        + ", ".join([f"<@{uid}>" for uid in linked_users])
-        + f" → " + ", ".join([f"{a}h-{b}h" for a, b in ranges])
-    )
-
-# === Lệnh tắt/bật quyền cho AutoJoiner ===
+# ---------- Lệnh tắt/bật quyền cho AutoJoiner (đẹp) ----------
 @bot.command()
 async def tatauto(ctx):
     guild = ctx.guild
     member = guild.get_member(1386358388497059882)
     channel = guild.get_channel(target_channel_id)
     log_channel = guild.get_channel(log_channel_id)
+    now = vn_now()
 
     if not member or not channel:
         await ctx.send("⚠️ Không tìm thấy thành viên hoặc channel.")
@@ -225,10 +283,10 @@ async def tatauto(ctx):
     overwrite.view_channel = False
     await channel.set_permissions(member, overwrite=overwrite)
 
+    emb = embed_auto_off(now, target_channel_id)
     if log_channel:
-        await log_channel.send("❌ AutoJoiner đã tắt")
-
-    await ctx.send("✅ Đã tắt quyền xem channel cho AutoJoiner.")
+        await log_channel.send(embed=emb)
+    await ctx.send(embed=emb)
 
 @bot.command()
 async def batauto(ctx):
@@ -236,6 +294,7 @@ async def batauto(ctx):
     member = guild.get_member(1386358388497059882)
     channel = guild.get_channel(target_channel_id)
     log_channel = guild.get_channel(log_channel_id)
+    now = vn_now()
 
     if not member or not channel:
         await ctx.send("⚠️ Không tìm thấy thành viên hoặc channel.")
@@ -245,12 +304,12 @@ async def batauto(ctx):
     overwrite.view_channel = True
     await channel.set_permissions(member, overwrite=overwrite)
 
+    emb = embed_auto_on(now, target_channel_id)
     if log_channel:
-        await log_channel.send("✅ AutoJoiner đã được bật")
+        await log_channel.send(embed=emb)
+    await ctx.send(embed=emb)
 
-    await ctx.send("✅ Đã bật quyền xem channel cho AutoJoiner.")
-
-# === Ready ===
+# ---------- Ready ----------
 @bot.event
 async def on_ready():
     print(f"✅ Bot đã online: {bot.user}")

@@ -12,9 +12,9 @@ intents.members = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# === Cấu hình ID kênh ===
-target_channel_id = 1395784873708486656  # kênh cần bật/tắt quyền xem
-log_channel_id = 1402130773418442863     # kênh để gửi thông báo/log
+# === ID kênh ===
+target_channel_id = 1395784873708486656      # kênh cần bật/tắt quyền xem
+announce_channel_id = 1402130773418442863    # kênh DUY NHẤT để bot gửi thông báo/phan hồi
 
 # === File lưu lịch để không mất khi restart ===
 SCHEDULE_FILE = "schedules.json"
@@ -22,7 +22,7 @@ SCHEDULE_FILE = "schedules.json"
 # === NHÓM ĐỒNG BỘ LỊCH ===
 # Mọi user trong cùng một tuple sẽ luôn có lịch giống nhau.
 LINK_GROUPS = [
-    (1288889343628541994, 994084789697134592),  # <@1288889343628541994> <-> <@994084789697134592>
+    (1288889343628541994, 994084789697134592),
 ]
 
 # ---------- Helpers: JSON schedules ----------
@@ -34,8 +34,8 @@ def load_schedules():
     except Exception:
         # lịch mặc định
         return {
-            994084789697134592: [(4, 7), (15, 18)],            # A
-            1288889343628541994: [(4, 7), (15, 18)],           # B (đồng bộ với A)
+            994084789697134592: [(4, 7), (15, 18)],
+            1288889343628541994: [(4, 7), (15, 18)],
             1284898656415125586: [(11, 15), (21, 24)],
             1134008850895343667: [(0, 4)],
             960787999833079881: [(7, 11), (18, 21)],
@@ -157,8 +157,9 @@ async def update_permissions():
     guild = discord.utils.get(bot.guilds)
     if not guild:
         return
+
     channel = guild.get_channel(target_channel_id)
-    log_channel = guild.get_channel(log_channel_id)
+    announce_channel = guild.get_channel(announce_channel_id)
 
     for user_id, schedule in user_schedules.items():
         member = guild.get_member(user_id)
@@ -174,11 +175,11 @@ async def update_permissions():
             overwrite.view_channel = can_view
             await channel.set_permissions(member, overwrite=overwrite)
 
-            if log_channel:
+            if announce_channel:
                 if can_view:
-                    await log_channel.send(embed=embed_open(member.mention, target_channel_id, now))
+                    await announce_channel.send(embed=embed_open(member.mention, target_channel_id, now))
                 else:
-                    await log_channel.send(embed=embed_close(member.mention, target_channel_id, now))
+                    await announce_channel.send(embed=embed_close(member.mention, target_channel_id, now))
 
 # ---------- Lệnh xem lịch tổng ----------
 @bot.command()
@@ -190,44 +191,52 @@ async def xemlich(ctx):
     )
     for uid, schedule in user_schedules.items():
         e.add_field(name=f"<@{uid}>", value=format_ranges(schedule), inline=False)
-    await ctx.send(embed=e)
+
+    announce_channel = ctx.guild.get_channel(announce_channel_id)
+    if announce_channel:
+        await announce_channel.send(embed=e)
 
 # ---------- Lệnh xem lịch 1 người ----------
 @bot.command()
 async def lich(ctx, user: discord.Member = None):
     if user is None:
-        await ctx.send("⚠️ Dùng: `!lich @user` hoặc `!lich USER_ID`")
+        # gửi nhắc sử dụng đúng CŨNG vào kênh chỉ định
+        announce_channel = ctx.guild.get_channel(announce_channel_id)
+        if announce_channel:
+            await announce_channel.send("⚠️ Dùng: `!lich @user` hoặc `!lich USER_ID`")
         return
-    uid = user.id
-    schedule = user_schedules.get(uid)
-    if not schedule:
-        await ctx.send(f"ℹ️ {user.mention} **chưa có lịch**.")
-        return
-    await ctx.send(embed=embed_set_single(user.mention, schedule, applied_now=False))
 
-# ---------- Lệnh SET lịch (admin) – chỉ log 'đồng bộ nhóm' khi thực sự có nhóm ----------
+    schedule = user_schedules.get(user.id)
+    announce_channel = ctx.guild.get_channel(announce_channel_id)
+    if not schedule:
+        if announce_channel:
+            await announce_channel.send(f"ℹ️ {user.mention} **chưa có lịch**.")
+        return
+
+    if announce_channel:
+        await announce_channel.send(embed=embed_set_single(user.mention, schedule, applied_now=False))
+
+# ---------- Lệnh SET lịch (admin) – đồng bộ nếu thuộc nhóm ----------
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def setlich(ctx, user: discord.Member = None, *, ranges_text: str = None):
-    """
-    Ví dụ:
-    !setlich @user 4-7,15-18
-    !setlich 1234567890 7-11
-    """
     if user is None or not ranges_text:
-        await ctx.send("⚠️ Dùng: `!setlich @user 4-7,15-18` hoặc `!setlich USER_ID 7-11`")
+        ch = ctx.guild.get_channel(announce_channel_id)
+        if ch:
+            await ch.send("⚠️ Dùng: `!setlich @user 4-7,15-18` hoặc `!setlich USER_ID 7-11`")
         return
 
     try:
         ranges = parse_ranges(ranges_text)
     except ValueError as e:
-        await ctx.send(f"❌ {e}")
+        ch = ctx.guild.get_channel(announce_channel_id)
+        if ch:
+            await ch.send(f"❌ {e}")
         return
 
-    # Tìm nhóm liên kết
     linked_users = get_linked_users(user.id)
 
-    # Cập nhật lịch
+    # Cập nhật lịch (cho nhóm hoặc 1 người)
     for uid in linked_users:
         user_schedules[uid] = ranges
     save_schedules()
@@ -235,7 +244,6 @@ async def setlich(ctx, user: discord.Member = None, *, ranges_text: str = None):
     # Áp dụng ngay
     guild = ctx.guild
     channel = guild.get_channel(target_channel_id)
-    log_channel = guild.get_channel(log_channel_id)
     now = vn_now()
     hour = now.hour
     applied_now = False
@@ -251,63 +259,55 @@ async def setlich(ctx, user: discord.Member = None, *, ranges_text: str = None):
             await channel.set_permissions(member, overwrite=overwrite)
             applied_now = True
 
-    # Thông báo:
-    if len(linked_users) > 1:
-        # Có đồng bộ nhóm
-        mentions_str = ", ".join([f"<@{uid}>" for uid in linked_users])
-        emb = embed_set_group(mentions_str, ranges, applied_now)
-        if log_channel:
-            await log_channel.send(embed=emb)
-        await ctx.send(embed=emb)
-    else:
-        # Không có đồng bộ, thông báo đơn lẻ
-        emb = embed_set_single(user.mention, ranges, applied_now)
-        if log_channel:
-            await log_channel.send(embed=emb)
-        await ctx.send(embed=emb)
+    # Gửi 1 nơi DUY NHẤT: kênh announce_channel_id
+    ch = guild.get_channel(announce_channel_id)
+    if ch:
+        if len(linked_users) > 1:
+            mentions_str = ", ".join([f"<@{uid}>" for uid in linked_users])
+            await ch.send(embed=embed_set_group(mentions_str, ranges, applied_now))
+        else:
+            await ch.send(embed=embed_set_single(user.mention, ranges, applied_now))
 
-# ---------- Lệnh tắt/bật quyền cho AutoJoiner (đẹp) ----------
+# ---------- Lệnh tắt/bật quyền cho AutoJoiner ----------
 @bot.command()
 async def tatauto(ctx):
     guild = ctx.guild
     member = guild.get_member(1386358388497059882)
     channel = guild.get_channel(target_channel_id)
-    log_channel = guild.get_channel(log_channel_id)
+    announce_channel = guild.get_channel(announce_channel_id)
     now = vn_now()
 
     if not member or not channel:
-        await ctx.send("⚠️ Không tìm thấy thành viên hoặc channel.")
+        if announce_channel:
+            await announce_channel.send("⚠️ Không tìm thấy thành viên hoặc channel.")
         return
 
     overwrite = discord.PermissionOverwrite()
     overwrite.view_channel = False
     await channel.set_permissions(member, overwrite=overwrite)
 
-    emb = embed_auto_off(now, target_channel_id)
-    if log_channel:
-        await log_channel.send(embed=emb)
-    await ctx.send(embed=emb)
+    if announce_channel:
+        await announce_channel.send(embed=embed_auto_off(now, target_channel_id))
 
 @bot.command()
 async def batauto(ctx):
     guild = ctx.guild
     member = guild.get_member(1386358388497059882)
     channel = guild.get_channel(target_channel_id)
-    log_channel = guild.get_channel(log_channel_id)
+    announce_channel = guild.get_channel(announce_channel_id)
     now = vn_now()
 
     if not member or not channel:
-        await ctx.send("⚠️ Không tìm thấy thành viên hoặc channel.")
+        if announce_channel:
+            await announce_channel.send("⚠️ Không tìm thấy thành viên hoặc channel.")
         return
 
     overwrite = discord.PermissionOverwrite()
     overwrite.view_channel = True
     await channel.set_permissions(member, overwrite=overwrite)
 
-    emb = embed_auto_on(now, target_channel_id)
-    if log_channel:
-        await log_channel.send(embed=emb)
-    await ctx.send(embed=emb)
+    if announce_channel:
+        await announce_channel.send(embed=embed_auto_on(now, target_channel_id))
 
 # ---------- Ready ----------
 @bot.event
@@ -316,3 +316,4 @@ async def on_ready():
     update_permissions.start()
 
 bot.run(TOKEN)
+

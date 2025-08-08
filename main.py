@@ -3,7 +3,7 @@ from discord.ext import commands, tasks
 from datetime import datetime, timedelta
 import os
 
-TOKEN = os.getenv("TOKEN")  # Token của bạn sẽ cấu hình trong Railway sau
+TOKEN = os.getenv("TOKEN")  # Token của bạn sẽ cấu hình trong Railway/Replit
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -18,7 +18,8 @@ log_channel_id = 1402130773418442863     # Channel để gửi thông báo
 
 # Lịch truy cập của từng user
 user_schedules = {
-    994084789697134592: [(4, 7), (15, 18)],
+    994084789697134592: [(4, 7), (15, 18)],            # user A
+    1288889343628541994: [(4, 7), (15, 18)],           # user mới (giống user A)
     1284898656415125586: [(11, 15), (21, 24)],
     1134008850895343667: [(0, 4)],
     960787999833079881: [(7, 11), (18, 21)],
@@ -82,7 +83,7 @@ async def tatauto(ctx):
 
     await ctx.send("✅ Đã tắt quyền xem channel cho AutoJoiner.")
 
-# ✅ Lệnh !batauto - Bật quyền xem của AutoJoiner
+# 🟢 Lệnh !batauto - Bật quyền xem của AutoJoiner
 @bot.command()
 async def batauto(ctx):
     guild = ctx.guild
@@ -109,3 +110,4 @@ async def on_ready():
     update_permissions.start()
 
 bot.run(TOKEN)
+
